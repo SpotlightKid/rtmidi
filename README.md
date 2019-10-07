@@ -4,7 +4,7 @@
 
 A set of C++ classes that provide a common API for realtime MIDI input/output across Linux (ALSA & JACK), Macintosh OS X (CoreMIDI & JACK) and Windows (Multimedia).
 
-By Gary P. Scavone, 2003-2017.
+By Gary P. Scavone, 2003-2019.
 
 This distribution of RtMidi contains the following:
 
@@ -24,7 +24,7 @@ RtMidi is a set of C++ classes (`RtMidiIn`, `RtMidiOut`, and API specific classe
   - only one header and one source file for easy inclusion in programming projects
   - MIDI device enumeration
 
-MIDI input and output functionality are separated into two classes, `RtMidiIn` and `RtMidiOut`.  Each class instance supports only a single MIDI connection.  RtMidi does not provide timing functionality (i.e., output messages are sent immediately).  Input messages are timestamped with delta times in seconds (via a `double` floating point type).  MIDI data is passed to the user as raw bytes using an `std::vector&lt;unsigned char&gt;`.
+MIDI input and output functionality are separated into two classes, `RtMidiIn` and `RtMidiOut`.  Each class instance supports only a single MIDI connection.  RtMidi does not provide timing functionality (i.e., output messages are sent immediately).  Input messages are timestamped with delta times in seconds (via a `double` floating point type).  MIDI data is passed to the user as raw bytes using an `std::vector<unsigned char>`.
 
 ## Windows
 
@@ -39,7 +39,7 @@ For complete documentation on RtMidi, see the `doc` directory of the distributio
 The RtMidi license is similar to the MIT License, with the added *feature* that modifications be sent to the developer.
 
     RtMidi: realtime MIDI i/o C++ classes
-    Copyright (c) 2003-2017 Gary P. Scavone
+    Copyright (c) 2003-2019 Gary P. Scavone
 
     Permission is hereby granted, free of charge, to any person
     obtaining a copy of this software and associated documentation files

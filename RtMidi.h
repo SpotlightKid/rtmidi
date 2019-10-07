@@ -5,10 +5,11 @@
     This class implements some common functionality for the realtime
     MIDI input/output subclasses RtMidiIn and RtMidiOut.
 
-    RtMidi WWW site: http://music.mcgill.ca/~gary/rtmidi/
+    RtMidi GitHub site: https://github.com/thestk/rtmidi
+    RtMidi WWW site: http://www.music.mcgill.ca/~gary/rtmidi/
 
     RtMidi: realtime MIDI i/o C++ classes
-    Copyright (c) 2003-2017 Gary P. Scavone
+    Copyright (c) 2003-2019 Gary P. Scavone
 
     Permission is hereby granted, free of charge, to any person
     obtaining a copy of this software and associated documentation files
@@ -57,7 +58,7 @@
   #endif
 #endif
 
-#define RTMIDI_VERSION "3.0.0"
+#define RTMIDI_VERSION "4.0.0"
 
 #include <exception>
 #include <iostream>
@@ -227,8 +228,6 @@ class RTMIDI_DLL_PUBLIC RtMidi
     time.  With the OS-X, Linux ALSA, and JACK MIDI APIs, it is also
     possible to open a virtual input port to which other MIDI software
     clients can connect.
-
-    by Gary P. Scavone, 2003-2017.
 */
 /**********************************************************************/
 
@@ -387,8 +386,6 @@ class RTMIDI_DLL_PUBLIC RtMidiIn : public RtMidi
     connect to more than one MIDI device at the same time.  With the
     OS-X, Linux ALSA and JACK MIDI APIs, it is also possible to open a
     virtual port to which other MIDI software clients can connect.
-
-    by Gary P. Scavone, 2003-2017.
 */
 /**********************************************************************/
 
