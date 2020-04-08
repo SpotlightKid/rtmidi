@@ -545,7 +545,9 @@ void MidiApi :: error( RtMidiError::Type type, std::string errorString )
   }
 
   if ( type == RtMidiError::WARNING ) {
+#if !defined(__RTMIDI_SILENCE_WARNINGS__)
     std::cerr << '\n' << errorString << "\n\n";
+#endif
   }
   else if ( type == RtMidiError::DEBUG_WARNING ) {
 #if defined(__RTMIDI_DEBUG__)
