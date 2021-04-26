@@ -2460,7 +2460,7 @@ static std::string ConvertToUTF8(const TCHAR *str)
   return u8str;
 }
 
-#define  RT_SYSEX_BUFFER_SIZE 8096
+#define  RT_SYSEX_BUFFER_SIZE 8196
 #define  RT_SYSEX_BUFFER_COUNT 4
 
 // A structure to hold variables related to the CoreMIDI API
