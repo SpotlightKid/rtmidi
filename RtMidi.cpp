@@ -651,9 +651,14 @@ double MidiInApi :: getMessage( std::vector<unsigned char> *message )
     return 0.0;
   }
 
+  RtMidiError::Type err = RtMidiError::NO_ERROR;
+  std::string err_msg;
   double timeStamp;
-  if ( !inputData_.queue.pop( message, &timeStamp ) )
+  if ( !inputData_.queue.pop( message, &timeStamp, &err, &err_msg ) )
     return 0.0;
+
+  if ( err != RtMidiError::NO_ERROR )
+    error( err, err_msg );
 
   return timeStamp;
 }
@@ -695,7 +700,7 @@ bool MidiInApi::MidiQueue::push( const MidiInApi::MidiMessage& msg )
   return false;
 }
 
-bool MidiInApi::MidiQueue::pop( std::vector<unsigned char> *msg, double* timeStamp )
+bool MidiInApi::MidiQueue::pop( std::vector<unsigned char> *msg, double* timeStamp, RtMidiError::Type *err, std::string *err_msg )
 {
   // Local stack copies of front/back
   unsigned int _back, _front, _size;
@@ -709,6 +714,8 @@ bool MidiInApi::MidiQueue::pop( std::vector<unsigned char> *msg, double* timeSta
   // Copy queued message to the vector pointer argument and then "pop" it.
   msg->assign( ring[_front].bytes.begin(), ring[_front].bytes.end() );
   *timeStamp = ring[_front].timeStamp;
+  *err = ring[_front].err;
+  *err_msg = ring[_front].err_msg;
 
   // Update front
   front = (front+1)%ringSize;
@@ -1650,6 +1657,17 @@ static void *alsaMidiHandler( void *ptr )
                 << (int) ev->data.connect.dest.port
                 << std::endl;
 #endif
+      if ( data->usingCallback ) {
+        std::cerr << "\nPort connection has closed!\n\n";
+        data->this_->error( RtMidiError::SYSTEM_ERROR, "Port connection has closed!" );
+      }
+      else {
+        MidiInApi::MidiMessage err_message;
+        err_message.err = RtMidiError::SYSTEM_ERROR;
+        err_message.err_msg = "Port connection has closed";
+        if ( !data->queue.push( err_message ) )
+          std::cerr << "\nMidiInCore: message queue limit reached!!\n\n";
+      }
       break;
 
     case SND_SEQ_EVENT_QFRAME: // MIDI time code
@@ -1832,6 +1850,7 @@ void MidiInAlsa :: initialize( const std::string& clientName )
   data->trigger_fds[1] = -1;
   apiData_ = (void *) data;
   inputData_.apiData = (void *) data;
+  inputData_.this_ = this;
 
   if ( pipe(data->trigger_fds) == -1 ) {
     errorString_ = "MidiInAlsa::initialize: error creating pipe objects.";
