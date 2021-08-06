@@ -578,6 +578,7 @@ class RTMIDI_DLL_PUBLIC MidiInApi : public MidiApi
     RtMidiIn::RtMidiCallback userCallback;
     void *userData;
     bool continueSysex;
+    MidiInApi *this_;
 
     // Default constructor.
     RtMidiInData()

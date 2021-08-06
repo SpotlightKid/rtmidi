@@ -1650,6 +1650,7 @@ static void *alsaMidiHandler( void *ptr )
                 << (int) ev->data.connect.dest.port
                 << std::endl;
 #endif
+      data->this_->error( RtMidiError::SYSTEM_ERROR, "Port connection has closed!" );
       break;
 
     case SND_SEQ_EVENT_QFRAME: // MIDI time code
@@ -1832,6 +1833,7 @@ void MidiInAlsa :: initialize( const std::string& clientName )
   data->trigger_fds[1] = -1;
   apiData_ = (void *) data;
   inputData_.apiData = (void *) data;
+  inputData_.this_ = this;
 
   if ( pipe(data->trigger_fds) == -1 ) {
     errorString_ = "MidiInAlsa::initialize: error creating pipe objects.";
