@@ -62,6 +62,7 @@
 
 #include <exception>
 #include <iostream>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -81,6 +82,7 @@ class RTMIDI_DLL_PUBLIC RtMidiError : public std::exception
  public:
   //! Defined RtMidiError types.
   enum Type {
+    NO_ERROR = 0,
     WARNING,           /*!< A non-critical error. */
     DEBUG_WARNING,     /*!< A non-critical error which might be useful for debugging. */
     UNSPECIFIED,       /*!< The default, unspecified error type. */
@@ -546,9 +548,13 @@ class RTMIDI_DLL_PUBLIC MidiInApi : public MidiApi
     //! Time in seconds elapsed since the previous message
     double timeStamp;
 
+    // Can also contain an error (when bytes.size() == 0)
+    RtMidiError::Type err;
+    std::string err_msg;
+
     // Default constructor.
     MidiMessage()
-      : bytes(0), timeStamp(0.0) {}
+      : bytes(0), timeStamp(0.0), err(RtMidiError::NO_ERROR) {}
   };
 
   struct MidiQueue {
@@ -556,12 +562,14 @@ class RTMIDI_DLL_PUBLIC MidiInApi : public MidiApi
     unsigned int back;
     unsigned int ringSize;
     MidiMessage *ring;
+    std::mutex lock;
 
     // Default constructor.
     MidiQueue()
       : front(0), back(0), ringSize(0), ring(0) {}
     bool push( const MidiMessage& );
-    bool pop( std::vector<unsigned char>*, double* );
+    bool pop( std::vector<unsigned char>*, double*, RtMidiError::Type*, std::string* );
+  private:
     unsigned int size( unsigned int *back=0, unsigned int *front=0 );
   };
 
@@ -578,6 +586,7 @@ class RTMIDI_DLL_PUBLIC MidiInApi : public MidiApi
     RtMidiIn::RtMidiCallback userCallback;
     void *userData;
     bool continueSysex;
+    MidiInApi *this_;
 
     // Default constructor.
     RtMidiInData()
