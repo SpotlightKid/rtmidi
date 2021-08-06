@@ -663,8 +663,9 @@ double MidiInApi :: getMessage( std::vector<unsigned char> *message )
   return timeStamp;
 }
 
+// structure should be locked before using this method
 unsigned int MidiInApi::MidiQueue::size( unsigned int *__back,
-                                         unsigned int *__front )
+                                         unsigned int *__front)
 {
   // Access back/front members exactly once and make stack copies for
   // size calculation
@@ -678,6 +679,7 @@ unsigned int MidiInApi::MidiQueue::size( unsigned int *__back,
   // to member variables are needed.
   if ( __back ) *__back = _back;
   if ( __front ) *__front = _front;
+
   return _size;
 }
 
@@ -687,6 +689,8 @@ bool MidiInApi::MidiQueue::push( const MidiInApi::MidiMessage& msg )
   // Local stack copies of front/back
   unsigned int _back, _front, _size;
 
+  lock.lock();
+
   // Get back/front indexes exactly once and calculate current size
   _size = size( &_back, &_front );
 
@@ -694,8 +698,11 @@ bool MidiInApi::MidiQueue::push( const MidiInApi::MidiMessage& msg )
   {
     ring[_back] = msg;
     back = (back+1)%ringSize;
+    lock.unlock();
     return true;
   }
+
+  lock.unlock();
 
   return false;
 }
@@ -705,11 +712,15 @@ bool MidiInApi::MidiQueue::pop( std::vector<unsigned char> *msg, double* timeSta
   // Local stack copies of front/back
   unsigned int _back, _front, _size;
 
+  lock.lock();
+
   // Get back/front indexes exactly once and calculate current size
   _size = size( &_back, &_front );
 
-  if ( _size == 0 )
+  if ( _size == 0 ) {
+    lock.unlock();
     return false;
+  }
 
   // Copy queued message to the vector pointer argument and then "pop" it.
   msg->assign( ring[_front].bytes.begin(), ring[_front].bytes.end() );
@@ -719,6 +730,9 @@ bool MidiInApi::MidiQueue::pop( std::vector<unsigned char> *msg, double* timeSta
 
   // Update front
   front = (front+1)%ringSize;
+
+  lock.unlock();
+
   return true;
 }
 
