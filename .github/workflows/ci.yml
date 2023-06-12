@@ -15,7 +15,7 @@ jobs:
             APIcmake: ALSA
             deps: libasound-dev
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
       with:
         fetch-depth: 0
     - name: install dependencies
@@ -36,7 +36,7 @@ jobs:
   MacOS:
     runs-on: macOS-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
       with:
         fetch-depth: 0
     - name: install dependencies
@@ -59,7 +59,7 @@ jobs:
           - host: x86_64-w64-mingw32
             api: winmm
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
       with:
         fetch-depth: 0
     - name: install dependencies
