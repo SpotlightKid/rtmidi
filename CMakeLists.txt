@@ -70,7 +70,7 @@ foreach(_S ${CONFIGAC})
 endforeach()
 math(EXPR SO_current_minus_age "${SO_current} - ${SO_age}")
 set(SO_VER "${SO_current_minus_age}")
-set(FULL_VER "${SO_current_minus_age}.${SO_revision}.${SO_age}")
+set(FULL_VER "${SO_current_minus_age}.${SO_age}.${SO_revision}")
 
 # Read package version info from configure.ac
 set(R "AC_INIT\\(RtMidi, ([0-9\\.]+),.*\\)")
@@ -87,6 +87,7 @@ set(PKGCONFIG_REQUIRES)
 set(LIBS_REQUIRES)
 set(API_DEFS)
 set(API_LIST)
+set(PACKAGE_DEPENDENCIES)
 
 # Tweak API-specific configuration.
 
@@ -125,10 +126,11 @@ if(RTMIDI_API_ALSA)
     message(FATAL_ERROR "ALSA API requested but no ALSA dev libraries found")
   endif()
   list(APPEND INCDIRS ${ALSA_INCLUDE_DIR})
-  list(APPEND LINKLIBS ${ALSA_LIBRARY})
+  list(APPEND LINKLIBS ALSA::ALSA)
   list(APPEND PKGCONFIG_REQUIRES "alsa")
   list(APPEND API_DEFS "-D__LINUX_ALSA__")
   list(APPEND API_LIST "alsa")
+  list(APPEND PACKAGE_DEPENDENCIES "find_dependency(ALSA)")
 endif()
 
 # WinMM
@@ -157,6 +159,7 @@ if (NEED_PTHREAD)
     CMAKE_THREAD_PREFER_PTHREAD
     THREADS_PREFER_PTHREAD_FLAG)
   list(APPEND PUBLICLINKLIBS Threads::Threads)
+  list(APPEND PACKAGE_DEPENDENCIES "find_dependency(Threads)")
 endif()
 
 # Create library targets.
@@ -187,6 +190,9 @@ set_target_properties(rtmidi PROPERTIES
   SOVERSION ${SO_VER}
   VERSION ${FULL_VER})
 
+# Set standard installation directories.
+include(GNUInstallDirs)
+
 # Set include paths, populate target interface.
 target_include_directories(rtmidi PRIVATE ${INCDIRS}
                                   PUBLIC
@@ -198,9 +204,6 @@ target_compile_definitions(rtmidi PRIVATE ${API_DEFS})
 target_compile_definitions(rtmidi PRIVATE RTMIDI_EXPORT)
 target_link_libraries(rtmidi PUBLIC ${PUBLICLINKLIBS} 
                              PRIVATE ${LINKLIBS})
-
-# Set standard installation directories.
-include(GNUInstallDirs)
 
 # Add tests if requested.
 option(RTMIDI_BUILD_TESTING "Build test programs" ON)
@@ -280,23 +283,25 @@ include(CMakePackageConfigHelpers)
 
 # Write cmake package version file
 write_basic_package_version_file(
-    RtMidi-config-version.cmake
+    rtmidi-config-version.cmake
     VERSION ${FULL_VER}
     COMPATIBILITY SameMajorVersion
 )
 
+string(REPLACE ";" "\n" package_dependencies "${PACKAGE_DEPENDENCIES}")
+
 # Write cmake package config file
 configure_package_config_file (
-    cmake/RtMidi-config.cmake.in
-    RtMidi-config.cmake
+    cmake/rtmidi-config.cmake.in
+    rtmidi-config.cmake
     INSTALL_DESTINATION "${RTMIDI_CMAKE_DESTINATION}"
 )
 
 # Install package files
 install (
     FILES
-        "${CMAKE_CURRENT_BINARY_DIR}/RtMidi-config.cmake"
-        "${CMAKE_CURRENT_BINARY_DIR}/RtMidi-config-version.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/rtmidi-config.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/rtmidi-config-version.cmake"
     DESTINATION
         "${RTMIDI_CMAKE_DESTINATION}"
 )

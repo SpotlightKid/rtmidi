@@ -39,6 +39,9 @@
 
 #include "RtMidi.h"
 #include <sstream>
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
 
 #if (TARGET_OS_IPHONE == 1)
 
@@ -2730,7 +2733,7 @@ void MidiInWinMM :: openPort( unsigned int portNumber, const std::string &/*port
 
   // Allocate and init the sysex buffers.
   data->sysexBuffer.resize( inputData_.bufferCount );
-  for ( int i=0; i < inputData_.bufferCount; ++i ) {
+  for ( unsigned int i=0; i < inputData_.bufferCount; ++i ) {
     data->sysexBuffer[i] = (MIDIHDR*) new char[ sizeof(MIDIHDR) ];
     data->sysexBuffer[i]->lpData = new char[ inputData_.bufferSize ];
     data->sysexBuffer[i]->dwBufferLength = inputData_.bufferSize;
@@ -2784,7 +2787,7 @@ void MidiInWinMM :: closePort( void )
     midiInReset( data->inHandle );
     midiInStop( data->inHandle );
 
-    for ( int i=0; i < data->sysexBuffer.size(); ++i ) {
+    for ( size_t i=0; i < data->sysexBuffer.size(); ++i ) {
       int result = midiInUnprepareHeader(data->inHandle, data->sysexBuffer[i], sizeof(MIDIHDR));
       delete [] data->sysexBuffer[i]->lpData;
       delete [] data->sysexBuffer[i];
@@ -3094,6 +3097,7 @@ void MidiOutWinMM :: sendMessage( const unsigned char *message, size_t size )
 #include <jack/midiport.h>
 #include <jack/ringbuffer.h>
 #include <pthread.h>
+#include <sched.h>
 #ifdef HAVE_SEMAPHORE
   #include <semaphore.h>
 #endif
@@ -3610,7 +3614,7 @@ void MidiOutJack :: sendMessage( const unsigned char *message, size_t size )
       return;
 
   while ( jack_ringbuffer_write_space(data->buff) < sizeof(nBytes) + size )
-      pthread_yield();
+      sched_yield();
 
   // Write full message to buffer
   jack_ringbuffer_write( data->buff, ( char * ) &nBytes, sizeof( nBytes ) );
@@ -3725,7 +3729,7 @@ std::string WebMidiAccessShim::getPortName( unsigned int portNumber, bool isInpu
     var ret = _malloc(length);
     stringToUTF8(port.name, ret, length);
     return ret;
-  }, portNumber, isInput, &ret );
+  }, portNumber, isInput);
   if (ret == nullptr)
       return "";
   std::string s = ret;

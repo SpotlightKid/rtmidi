@@ -67,3 +67,6 @@
 *.exe
 *.out
 *.app
+
+# Go
+!/contrib/go/rtmidi/go.mod
