@@ -808,6 +808,17 @@ MidiInApi :: ~MidiInApi( void )
   if ( inputData_.queue.ringSize > 0 ) delete [] inputData_.queue.ring;
 }
 
+// RtMidiInData is part of MidiInApi's layout, and so of the ABI: its atomic
+// members must have the size and alignment of the plain types they replaced.
+static_assert( sizeof( std::atomic<bool> ) == sizeof( bool ) &&
+               alignof( std::atomic<bool> ) == alignof( bool ),
+               "std::atomic<bool> would change the layout of RtMidiInData" );
+static_assert( sizeof( std::atomic<void *> ) == sizeof( void * ) &&
+               alignof( std::atomic<void *> ) == alignof( void * ) &&
+               sizeof( std::atomic<RtMidiIn::RtMidiCallback> ) == sizeof( RtMidiIn::RtMidiCallback ) &&
+               alignof( std::atomic<RtMidiIn::RtMidiCallback> ) == alignof( RtMidiIn::RtMidiCallback ),
+               "std::atomic of a pointer would change the layout of RtMidiInData" );
+
 void MidiInApi :: setCallback( RtMidiIn::RtMidiCallback callback, void *userData )
 {
   if ( inputData_.usingCallback ) {
@@ -822,9 +833,10 @@ void MidiInApi :: setCallback( RtMidiIn::RtMidiCallback callback, void *userData
     return;
   }
 
-  inputData_.userCallback = callback;
-  inputData_.userData = userData;
-  inputData_.usingCallback = true;
+  inputData_.userCallback.store( callback, std::memory_order_relaxed );
+  inputData_.userData.store( userData, std::memory_order_relaxed );
+  // Publishes the two stores above to the input thread (callUserCallback()).
+  inputData_.usingCallback.store( true, std::memory_order_release );
 }
 
 void MidiInApi :: cancelCallback()
@@ -835,8 +847,8 @@ void MidiInApi :: cancelCallback()
     return;
   }
 
-  inputData_.userCallback = 0;
-  inputData_.userData = 0;
+  // Only the flag: the input thread may have seen it set a moment ago and be
+  // about to read userCallback and userData, which must not be null then.
   inputData_.usingCallback = false;
 }
 
@@ -1051,11 +1063,7 @@ static void midiInputCallback( const MIDIPacketList *list, void *procRef, void *
 
       if ( !( data->ignoreFlags & 0x01 ) && !continueSysex ) {
         // If not a continuing sysex message, invoke the user callback function or queue the message.
-        if ( data->usingCallback ) {
-          RtMidiIn::RtMidiCallback callback = (RtMidiIn::RtMidiCallback) data->userCallback;
-          callback( message.timeStamp, &message.bytes, data->userData );
-        }
-        else {
+        if ( !data->callUserCallback( message.timeStamp, &message.bytes ) ) {
           // As long as we haven't reached our queue size limit, push the message.
           if ( !data->queue.push( message ) )
             std::cerr << "\nMidiInCore: message queue limit reached!!\n\n";
@@ -1110,11 +1118,7 @@ static void midiInputCallback( const MIDIPacketList *list, void *procRef, void *
           message.bytes.assign( &packet->data[iByte], &packet->data[iByte+size] );
           if ( !continueSysex ) {
             // If not a continuing sysex message, invoke the user callback function or queue the message.
-            if ( data->usingCallback ) {
-              RtMidiIn::RtMidiCallback callback = (RtMidiIn::RtMidiCallback) data->userCallback;
-              callback( message.timeStamp, &message.bytes, data->userData );
-            }
-            else {
+            if ( !data->callUserCallback( message.timeStamp, &message.bytes ) ) {
               // As long as we haven't reached our queue size limit, push the message.
               if ( !data->queue.push( message ) )
                 std::cerr << "\nMidiInCore: message queue limit reached!!\n\n";
@@ -1764,6 +1768,8 @@ struct AlsaMidiData {
   unsigned int bufferSize;
   unsigned int requestedBufferSize;
   unsigned char *buffer;
+  // The input thread, or dummy_thread_id when there is none to join. Only the
+  // thread that owns the MidiInAlsa writes it (see joinInputThread()).
   pthread_t thread;
   pthread_t dummy_thread_id;
   snd_seq_real_time_t lastTime;
@@ -1772,6 +1778,19 @@ struct AlsaMidiData {
 };
 
 #define PORT_TYPE( pinfo, bits ) ((snd_seq_port_info_get_capability(pinfo) & (bits)) == (bits))
+
+// Joins the input thread, if one was started and has not been joined yet.
+// The input thread must not reset data->thread itself when it exits: a reset
+// between the check and the join below would make the owner join
+// dummy_thread_id, i.e. the thread that created the MidiInAlsa, which hangs;
+// a reset before the check leaves the thread unjoined.
+static void joinInputThread( AlsaMidiData *data )
+{
+  if ( !pthread_equal( data->thread, data->dummy_thread_id ) ) {
+    pthread_join( data->thread, NULL );
+    data->thread = data->dummy_thread_id;
+  }
+}
 
 //*********************************************************************//
 //  API: LINUX ALSA
@@ -1970,11 +1989,7 @@ static void *alsaMidiHandler( void *ptr )
     snd_seq_free_event( ev );
     if ( message.bytes.size() == 0 || continueSysex ) continue;
 
-    if ( data->usingCallback ) {
-      RtMidiIn::RtMidiCallback callback = (RtMidiIn::RtMidiCallback) data->userCallback;
-      callback( message.timeStamp, &message.bytes, data->userData );
-    }
-    else {
+    if ( !data->callUserCallback( message.timeStamp, &message.bytes ) ) {
       // As long as we haven't reached our queue size limit, push the message.
       if ( !data->queue.push( message ) )
         std::cerr << "\nMidiInAlsa: message queue limit reached!!\n\n";
@@ -1984,7 +1999,6 @@ static void *alsaMidiHandler( void *ptr )
   if ( buffer ) free( buffer );
   snd_midi_event_free( apiData->coder );
   apiData->coder = 0;
-  apiData->thread = apiData->dummy_thread_id;
   return 0;
 }
 
@@ -2005,9 +2019,8 @@ MidiInAlsa :: ~MidiInAlsa()
     inputData_.doInput = false;
     int res = write( data->trigger_fds[1], &inputData_.doInput, sizeof( inputData_.doInput ) );
     (void) res;
-    if ( !pthread_equal(data->thread, data->dummy_thread_id) )
-      pthread_join( data->thread, NULL );
   }
+  joinInputThread( data );
 
   // Cleanup.
   close ( data->trigger_fds[0] );
@@ -2221,6 +2234,9 @@ void MidiInAlsa :: openPort( unsigned int portNumber, const std::string &portNam
   }
 
   if ( inputData_.doInput == false ) {
+    // Wait for old thread to stop, if still running
+    joinInputThread( data );
+
     // Start the input queue
 #ifndef AVOID_TIMESTAMPING
     snd_seq_start_queue( data->seq, data->queue_id, NULL );
@@ -2236,6 +2252,7 @@ void MidiInAlsa :: openPort( unsigned int portNumber, const std::string &portNam
     int err = pthread_create( &data->thread, &attr, alsaMidiHandler, &inputData_ );
     pthread_attr_destroy( &attr );
     if ( err ) {
+      data->thread = data->dummy_thread_id; // undefined after a failed pthread_create()
       snd_seq_unsubscribe_port( data->seq, data->subscription );
       snd_seq_port_subscribe_free( data->subscription );
       data->subscription = 0;
@@ -2280,8 +2297,7 @@ void MidiInAlsa :: openVirtualPort( const std::string &portName )
 
   if ( inputData_.doInput == false ) {
     // Wait for old thread to stop, if still running
-    if ( !pthread_equal( data->thread, data->dummy_thread_id ) )
-      pthread_join( data->thread, NULL );
+    joinInputThread( data );
 
     // Start the input queue
 #ifndef AVOID_TIMESTAMPING
@@ -2298,6 +2314,7 @@ void MidiInAlsa :: openVirtualPort( const std::string &portName )
     int err = pthread_create( &data->thread, &attr, alsaMidiHandler, &inputData_ );
     pthread_attr_destroy( &attr );
     if ( err ) {
+      data->thread = data->dummy_thread_id; // undefined after a failed pthread_create()
       if ( data->subscription ) {
         snd_seq_unsubscribe_port( data->seq, data->subscription );
         snd_seq_port_subscribe_free( data->subscription );
@@ -2334,9 +2351,8 @@ void MidiInAlsa :: closePort( void )
     inputData_.doInput = false;
     int res = write( data->trigger_fds[1], &inputData_.doInput, sizeof( inputData_.doInput ) );
     (void) res;
-    if ( !pthread_equal( data->thread, data->dummy_thread_id ) )
-      pthread_join( data->thread, NULL );
   }
+  joinInputThread( data );
 }
 
 void MidiInAlsa :: setClientName( const std::string &clientName )
@@ -2774,11 +2790,7 @@ static void CALLBACK midiInputCallback( HMIDIIN /*hmin*/,
   // Save the time of the last non-filtered message
   apiData->lastTime = timestamp;
 
-  if ( data->usingCallback ) {
-    RtMidiIn::RtMidiCallback callback = (RtMidiIn::RtMidiCallback) data->userCallback;
-    callback( apiData->message.timeStamp, &apiData->message.bytes, data->userData );
-  }
-  else {
+  if ( !data->callUserCallback( apiData->message.timeStamp, &apiData->message.bytes ) ) {
     // As long as we haven't reached our queue size limit, push the message.
     if ( !data->queue.push( apiData->message ) )
       std::cerr << "\nMidiInWinMM: message queue limit reached!!\n\n";
@@ -3645,11 +3657,7 @@ void UWPMidiClass::midi_in_callback(const MidiInPort&, const MidiMessageReceived
 
     last_time_ = duration;
 
-    if (input_data_->usingCallback)
-    {
-        (input_data_->userCallback)(message.timeStamp, &message.bytes, input_data_->userData);
-    }
-    else
+    if (!input_data_->callUserCallback(message.timeStamp, &message.bytes))
     {
         std::lock_guard<std::mutex> lock(mtx_queue_);
 
@@ -4075,11 +4083,7 @@ static int jackProcessIn( jack_nframes_t nframes, void *arg )
     if ( !continueSysex ) {
       // If not a continuation of a SysEx message,
       // invoke the user callback function or queue the message.
-      if ( rtData->usingCallback ) {
-        RtMidiIn::RtMidiCallback callback = (RtMidiIn::RtMidiCallback) rtData->userCallback;
-        callback( message.timeStamp, &message.bytes, rtData->userData );
-      }
-      else {
+      if ( !rtData->callUserCallback( message.timeStamp, &message.bytes ) ) {
         // As long as we haven't reached our queue size limit, push the message.
         if ( !rtData->queue.push( message ) )
           std::cerr << "\nMidiInJack: message queue limit reached!!\n\n";
@@ -4645,10 +4649,7 @@ extern "C" void EMSCRIPTEN_KEEPALIVE rtmidi_onMidiMessageProc( MidiInApi::RtMidi
   message.bytes.resize(message.bytes.size() + length);
   memcpy(message.bytes.data(), inputBytes, length);
   // FIXME: handle timestamp
-  if ( data->usingCallback ) {
-    RtMidiIn::RtMidiCallback callback = (RtMidiIn::RtMidiCallback) data->userCallback;
-    callback( message.timeStamp, &message.bytes, data->userData );
-  }
+  data->callUserCallback( message.timeStamp, &message.bytes );
 }
 
 void MidiInWeb::openPort( unsigned int portNumber, const std::string &portName )
@@ -5174,10 +5175,7 @@ void* MidiInAndroid :: pollMidi(void* context) {
       }
 
       if (!continueSysex) {
-        if (self->inputData_.usingCallback) {
-          auto callback = (RtMidiIn::RtMidiCallback) self->inputData_.userCallback;
-          callback(message.timeStamp, &message.bytes, self->inputData_.userData);
-        } else {
+        if (!self->inputData_.callUserCallback(message.timeStamp, &message.bytes)) {
           if (!self->inputData_.queue.push(message))
             std::cerr << "\nMidiInAndroid: message queue limit reached!!\n\n";
         }
